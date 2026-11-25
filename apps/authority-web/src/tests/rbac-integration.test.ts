@@ -30,7 +30,7 @@ import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 // Test Configuration
 // ============================================
 
-const BASE_URL = process.env.TEST_API_BASE_URL || 'http://localhost:3000/v1';
+const BASE_URL = process.env.TEST_API_BASE_URL || 'http://localhost:3000/api/v1';
 const TEST_TIMEOUT = 60000;
 
 // Test tokens (populated during beforeAll)

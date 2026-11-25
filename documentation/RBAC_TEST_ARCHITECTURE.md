@@ -158,7 +158,7 @@ This document describes the RBAC test architecture for Phase 3 Final Security Ve
 - Fails fast if backend not ready within timeout
 
 **Environment Variables Required:**
-- `TEST_API_BASE_URL` — Backend API base URL (e.g. `http://localhost:3000/v1`)
+- `TEST_API_BASE_URL` — Backend API base URL (e.g. `http://localhost:3000/api/v1`)
 - `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD` — PostgreSQL config
 - `JWT_SECRET`, `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` — Auth config
 - Test user credentials: `*_PHONE`, `*_PASSWORD` for each role
