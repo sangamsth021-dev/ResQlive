@@ -12,9 +12,6 @@ jobs:
   lint-typecheck:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: ./resq-live
 
     steps:
       - name: Checkout repository
@@ -29,20 +26,34 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run TypeScript typecheck
-        run: npm run typecheck
+      - name: Run TypeScript typecheck (backend)
+        run: npm run typecheck --workspace=@resq/backend
 
-      - name: Run ESLint
-        run: npm run lint
+      - name: Run TypeScript typecheck (shared-types)
+        run: npm run typecheck --workspace=@resq/shared-types
 
-  # Backend Tests
+      - name: Run TypeScript typecheck (validation)
+        run: npm run typecheck --workspace=@resq/validation
+
+      - name: Run TypeScript typecheck (config)
+        run: npm run typecheck --workspace=@resq/config
+
+      - name: Run TypeScript typecheck (sync-client)
+        run: npm run typecheck --workspace=@resq/sync-client
+
+      - name: Run ESLint (backend)
+        run: npm run lint --workspace=@resq/backend
+
+      - name: Run ESLint (authority-web)
+        run: npm run lint --workspace=resq-authority-web
+
+      # Note: Desktop does not have a dedicated lint script; skip without fallback
+
+      # Backend Tests
   backend-tests:
     needs: lint-typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: ./resq-live
 
     services:
       postgres:
@@ -91,22 +102,19 @@ jobs:
           JWT_SECRET: test-secret-key-for-ci
           JWT_EXPIRES_IN: 15m
           JWT_REFRESH_EXPIRES_IN: 30d
-        run: npm test
+        run: npm run test --workspace=@resq/backend
 
       - name: Upload test coverage
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-coverage
-          path: resq-live/apps/backend/coverage/
+          path: apps/backend/coverage/
 
   # Frontend Tests (Authority Web)
   frontend-tests:
     needs: lint-typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: ./resq-live/apps/authority-web
 
     steps:
       - name: Checkout repository
@@ -122,7 +130,7 @@ jobs:
         run: npm ci
 
       - name: Run Frontend Tests
-        run: npm test
+        run: npm run test --workspace=resq-authority-web
 
       - name: Upload test coverage
         uses: actions/upload-artifact@v4
@@ -135,9 +143,6 @@ jobs:
     needs: lint-typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: ./resq-live
 
     services:
       postgres:
@@ -170,7 +175,6 @@ jobs:
       - name: Verify Migration Files Exist
         run: |
           ls apps/backend/src/database/migrations/*.ts | wc -l
-          echo "Migrations found: $?"
 
       - name: Run Migration Dry-run
         env:
@@ -187,9 +191,6 @@ jobs:
     needs: [lint-typecheck, backend-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: ./resq-live
 
     services:
       postgres:
@@ -279,14 +280,46 @@ jobs:
 
       - name: Run RBAC Integration Tests
         env:
-          TEST_API_BASE_URL: http://localhost:3000/v1
+          TEST_API_BASE_URL: http://localhost:3000/api/v1
+          SUPER_ADMIN_PHONE: +15550000001
+          SUPER_ADMIN_PASSWORD: TestPass123!
+          ORG_ADMIN_A_PHONE: +15550000002
+          ORG_ADMIN_A_PASSWORD: TestPass123!
+          ORG_ADMIN_B_PHONE: +15550000003
+          ORG_ADMIN_B_PASSWORD: TestPass123!
+          OPERATOR_PHONE: +15550000004
+          OPERATOR_PASSWORD: TestPass123!
+          RESPONDER_PHONE: +15550000005
+          RESPONDER_PASSWORD: TestPass123!
+          REPORTER_A_PHONE: +15550000006
+          REPORTER_A_PASSWORD: TestPass123!
+          REPORTER_B_PHONE: +15550000007
+          REPORTER_B_PASSWORD: TestPass123!
+          AUDITOR_PHONE: +15550000008
+          AUDITOR_PASSWORD: TestPass123!
         run: |
           cd apps/authority-web
           npx vitest run src/tests/rbac-integration.test.ts --reporter=verbose
 
       - name: Run Security Boundary Tests
         env:
-          TEST_API_BASE_URL: http://localhost:3000/v1
+          TEST_API_BASE_URL: http://localhost:3000/api/v1
+          SUPER_ADMIN_PHONE: +15550000001
+          SUPER_ADMIN_PASSWORD: TestPass123!
+          ORG_ADMIN_A_PHONE: +15550000002
+          ORG_ADMIN_A_PASSWORD: TestPass123!
+          ORG_ADMIN_B_PHONE: +15550000003
+          ORG_ADMIN_B_PASSWORD: TestPass123!
+          OPERATOR_PHONE: +15550000004
+          OPERATOR_PASSWORD: TestPass123!
+          RESPONDER_PHONE: +15550000005
+          RESPONDER_PASSWORD: TestPass123!
+          REPORTER_A_PHONE: +15550000006
+          REPORTER_A_PASSWORD: TestPass123!
+          REPORTER_B_PHONE: +15550000007
+          REPORTER_B_PASSWORD: TestPass123!
+          AUDITOR_PHONE: +15550000008
+          AUDITOR_PASSWORD: TestPass123!
         run: |
           cd apps/authority-web
           npx vitest run src/tests/security-boundaries.test.ts --reporter=verbose
@@ -302,9 +335,6 @@ jobs:
     needs: [backend-tests, frontend-tests, db-migrations, rbac-integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: ./resq-live
 
     steps:
       - name: Checkout repository
@@ -332,43 +362,44 @@ jobs:
       - name: Build Authority Web
         run: npm run build --workspace=resq-authority-web
 
+      - name: Build Desktop
+        run: npm run build --workspace=resq-desktop
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: |
-            resq-live/dist/
-            packages/
+            apps/backend/dist/
+            packages/**/dist/
             apps/authority-web/dist/
+            apps/desktop/dist/
 
-  # Publish packages
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: ./resq-live
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Publish Shared Types
-        run: npm publish --access restricted --workspace=@resq/shared-types
-
-      - name: Publish Validation
-        run: npm publish --access restricted --workspace=@resq/validation
-
-      - name: Publish Config
-        run: npm publish --access restricted --workspace=@resq/config
-
-      - name: Publish Sync Client
-        run: npm publish --access restricted --workspace=@resq/sync-client
+  # Publish packages - DISABLED until registry auth and release process configured
+  # publish:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+  #   timeout-minutes: 15
+  #
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #         cache: 'npm'
+  #
+  #     - name: Publish Shared Types
+  #       run: npm publish --access restricted --workspace=@resq/shared-types
+  #
+  #     - name: Publish Validation
+  #       run: npm publish --access restricted --workspace=@resq/validation
+  #
+  #     - name: Publish Config
+  #       run: npm publish --access restricted --workspace=@resq/config
+  #
+  #     - name: Publish Sync Client
+  #       run: npm publish --access restricted --workspace=@resq/sync-client
