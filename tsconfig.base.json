@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@resq/shared-types": ["packages/shared-types/src"],
+      "@resq/validation": ["packages/validation/src"],
+      "@resq/config": ["packages/config/src"],
+      "@resq/sync-client": ["packages/sync-client/src"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "build"]
+}

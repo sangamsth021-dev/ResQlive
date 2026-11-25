@@ -1,0 +1,21 @@
+{
+  "name": "@resq/shared-types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types generated from OpenAPI specification",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "generate": "openapi-typescript ../../packages/api-contracts/openapi.yaml --output ./src/index.ts",
+    "dev": "tsc -w",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "openapi-typescript": "^7.4.0",
+    "typescript": "^5.5.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

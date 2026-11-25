@@ -1,0 +1,374 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  # Lint and TypeCheck
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ./resq-live
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Run ESLint
+        run: npm run lint
+
+  # Backend Tests
+  backend-tests:
+    needs: lint-typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./resq-live
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resq_live_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Database Migrations
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: resq_live_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+        run: npx knex migrate:latest --knexfile apps/backend/src/database/knexfile.ts
+
+      - name: Run Backend Tests
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: resq_live_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+          JWT_SECRET: test-secret-key-for-ci
+          JWT_EXPIRES_IN: 15m
+          JWT_REFRESH_EXPIRES_IN: 30d
+        run: npm test
+
+      - name: Upload test coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-coverage
+          path: resq-live/apps/backend/coverage/
+
+  # Frontend Tests (Authority Web)
+  frontend-tests:
+    needs: lint-typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ./resq-live/apps/authority-web
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Frontend Tests
+        run: npm test
+
+      - name: Upload test coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-test-coverage
+          path: apps/authority-web/coverage/
+
+  # Database Migration Validation
+  db-migrations:
+    needs: lint-typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ./resq-live
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resq_live_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Migration Files Exist
+        run: |
+          ls apps/backend/src/database/migrations/*.ts | wc -l
+          echo "Migrations found: $?"
+
+      - name: Run Migration Dry-run
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: resq_live_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+        run: |
+          npx knex migrate:latest --knexfile apps/backend/src/database/knexfile.ts --dry-run
+
+  # RBAC Integration Tests (Security Boundaries)
+  rbac-integration-tests:
+    needs: [lint-typecheck, backend-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./resq-live
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resq_live_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Database Migrations
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: resq_live_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+        run: npx knex migrate:latest --knexfile apps/backend/src/database/knexfile.ts
+
+      - name: Seed Test Data
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: resq_live_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+          JWT_SECRET: test-secret-key-for-ci
+          JWT_EXPIRES_IN: 15m
+          JWT_REFRESH_EXPIRES_IN: 30d
+        run: |
+          # Run deterministic test data seeding script
+          cd apps/backend
+          npx tsx test/fixtures/rbac-test-seed.ts
+          echo "✅ Test data seeded successfully"
+
+      - name: Start Backend Server
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: resq_live_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+          JWT_SECRET: test-secret-key-for-ci
+          JWT_EXPIRES_IN: 15m
+          JWT_REFRESH_EXPIRES_IN: 30d
+          PORT: 3000
+        run: |
+          cd apps/backend
+          npm run start:dev &
+          BACKEND_PID=$!
+
+          # Wait for backend readiness with retry (uses /api/v1/health/ready due to global prefix)
+          for i in $(seq 1 30); do
+            if curl -f http://localhost:3000/api/v1/health/ready 2>/dev/null; then
+              echo "✅ Backend readiness endpoint responds";
+              break;
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Backend readiness not reached after 30 attempts";
+              exit 1;
+            fi
+            echo "   Attempt $i/30 - waiting for backend...";
+            sleep 5;
+          done;
+
+          # Store PID for cleanup
+          echo $BACKEND_PID > /tmp/backend.pid
+
+      - name: Run RBAC Integration Tests
+        env:
+          TEST_API_BASE_URL: http://localhost:3000/v1
+        run: |
+          cd apps/authority-web
+          npx vitest run src/tests/rbac-integration.test.ts --reporter=verbose
+
+      - name: Run Security Boundary Tests
+        env:
+          TEST_API_BASE_URL: http://localhost:3000/v1
+        run: |
+          cd apps/authority-web
+          npx vitest run src/tests/security-boundaries.test.ts --reporter=verbose
+
+      - name: Upload RBAC Test Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: rbac-test-results
+          path: apps/authority-web/test-results/
+
+  # Build artifacts
+  build:
+    needs: [backend-tests, frontend-tests, db-migrations, rbac-integration-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./resq-live
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Backend
+        run: npm run build --workspace=@resq/backend
+
+      - name: Build Shared Packages
+        run: |
+          npm run build --workspace=@resq/shared-types
+          npm run build --workspace=@resq/validation
+          npm run build --workspace=@resq/config
+          npm run build --workspace=@resq/sync-client
+
+      - name: Build Authority Web
+        run: npm run build --workspace=resq-authority-web
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            resq-live/dist/
+            packages/
+            apps/authority-web/dist/
+
+  # Publish packages
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ./resq-live
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Publish Shared Types
+        run: npm publish --access restricted --workspace=@resq/shared-types
+
+      - name: Publish Validation
+        run: npm publish --access restricted --workspace=@resq/validation
+
+      - name: Publish Config
+        run: npm publish --access restricted --workspace=@resq/config
+
+      - name: Publish Sync Client
+        run: npm publish --access restricted --workspace=@resq/sync-client
